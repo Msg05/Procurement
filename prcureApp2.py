@@ -252,9 +252,10 @@ def main():
         filtered_df = filtered_df[cert_mask]
     
     # Calculate weighted score based on buyer requirements
-    filtered_df['weighted_score'] = filtered_df.apply(
-        lambda row: calculate_weighted_score(row, weights), axis=1
-    )
+    if not filtered_df.empty:
+        filtered_df['weighted_score'] = filtered_df.apply(
+            lambda row: calculate_weighted_score(row, weights), axis=1
+        )
     
     # Ranking options
     st.sidebar.header("Ranking Options")
@@ -564,6 +565,10 @@ def main():
         - **Switching Cost Importance:** {weights['switching_cost']*100:.0f}%
         """)
         
+        if filtered_df.empty:
+            st.warning("No suppliers match your current filters. Please adjust your filters to see results.")
+            return
+        
         # Show top suppliers based on weighted score
         top_buyer_suppliers = filtered_df.sort_values('weighted_score', ascending=False).head(10)
         
@@ -586,9 +591,12 @@ def main():
             for _, supplier in top_buyer_suppliers.head(3).iterrows():
                 # Normalize values for radar chart (0-1 scale)
                 sustainability_norm = supplier['sustainability_score'] / 100
-                lead_time_norm = 1 - normalize_column(filtered_df['lead_time_days'], ascending=True)[supplier.name]
-                onboarding_cost_norm = 1 - normalize_column(filtered_df['onboarding_cost_usd'], ascending=True)[supplier.name]
-                switching_cost_norm = 1 - normalize_column(filtered_df['switching_cost_usd'], ascending=True)[supplier.name]
+                lead_time_norm = 1 - ((supplier['lead_time_days'] - filtered_df['lead_time_days'].min()) / 
+                                     (filtered_df['lead_time_days'].max() - filtered_df['lead_time_days'].min()))
+                onboarding_cost_norm = 1 - ((supplier['onboarding_cost_usd'] - filtered_df['onboarding_cost_usd'].min()) / 
+                                           (filtered_df['onboarding_cost_usd'].max() - filtered_df['onboarding_cost_usd'].min()))
+                switching_cost_norm = 1 - ((supplier['switching_cost_usd'] - filtered_df['switching_cost_usd'].min()) / 
+                                          (filtered_df['switching_cost_usd'].max() - filtered_df['switching_cost_usd'].min()))
                 
                 values = [
                     sustainability_norm,
@@ -616,13 +624,12 @@ def main():
             
             st.plotly_chart(fig, use_container_width=True)
         
-        # Cost vs Sustainability analysis
+        # Cost vs Sustainability analysis - FIXED: Remove size parameter
         st.subheader("Cost vs Sustainability Analysis")
         
         fig = px.scatter(filtered_df, 
                         x="sustainability_score", 
                         y="onboarding_cost_usd",
-                        size="weighted_score",
                         color="industry",
                         hover_name="name",
                         title="Sustainability vs Onboarding Cost",
@@ -632,17 +639,39 @@ def main():
                         })
         st.plotly_chart(fig, use_container_width=True)
         
-        # Lead Time vs Sustainability analysis
+        # Lead Time vs Sustainability analysis - FIXED: Remove size parameter
         fig = px.scatter(filtered_df, 
                         x="sustainability_score", 
                         y="lead_time_days",
-                        size="weighted_score",
                         color="industry",
                         hover_name="name",
                         title="Sustainability vs Lead Time",
                         labels={
                             "sustainability_score": "Sustainability Score",
                             "lead_time_days": "Lead Time (Days)"
+                        })
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show trade-off analysis
+        st.subheader("Trade-off Analysis")
+        
+        # Calculate normalized scores for visualization
+        filtered_df['sustainability_norm'] = filtered_df['sustainability_score'] / 100
+        filtered_df['lead_time_norm'] = 1 - ((filtered_df['lead_time_days'] - filtered_df['lead_time_days'].min()) / 
+                                           (filtered_df['lead_time_days'].max() - filtered_df['lead_time_days'].min()))
+        filtered_df['cost_norm'] = 1 - ((filtered_df['onboarding_cost_usd'] - filtered_df['onboarding_cost_usd'].min()) / 
+                                      (filtered_df['onboarding_cost_usd'].max() - filtered_df['onboarding_cost_usd'].min()))
+        
+        # Create a trade-off scatter plot
+        fig = px.scatter(filtered_df, 
+                        x="sustainability_norm", 
+                        y="cost_norm",
+                        color="industry",
+                        hover_name="name",
+                        title="Trade-off: Sustainability vs Cost Efficiency (Normalized)",
+                        labels={
+                            "sustainability_norm": "Sustainability (Higher is better)",
+                            "cost_norm": "Cost Efficiency (Higher is better)"
                         })
         st.plotly_chart(fig, use_container_width=True)
 
